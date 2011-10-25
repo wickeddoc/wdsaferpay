@@ -1,9 +1,9 @@
-eZ Paypal Payment Gateway extension [ExtensionVersion] INSTALL
+eZ SaferPay Payment Gateway extension
 
 Introduction
 ============
 
-1. What is the eZ Paypal Payment Gateway extension?
+1. What is the eZ SaferPay Payment Gateway extension?
    ------------------------------------------------
 
    Payment gateway for SaferPay (http://www.saferpay.ch)
@@ -36,7 +36,7 @@ Introduction
    o  eZ publish must be reachable from the internet:
 
       Make sure you have installed eZ publish on a webserver that is reachable by
-      the Paypal service.
+      the SaferPay service.
 
 
 Getting eZ publish
@@ -52,21 +52,23 @@ Information on the installation of eZ publish can be found at:
 http://ez.no/ez_publish/documentation/installation
 
 
-Installing eZ Paypal Payment Gateway extension
+Installing eZ SaferPay Payment Gateway extension
 ==============================================
 
-1. Copy the package into the `extension' directory in the root of your eZ publish installation.
+1. Install the package into the 'extension' directory in the root of your eZ publish installation.
 
-2. Unpack the files in the distribution. The command necessary is depends on the file you
-   downloaded.
-   [tar.gz]:
-   $ tar -zxvf ezpaypal-extension-[ExtensionVersion].tar.gz
-   [bz2]:
-   $ tar -jxvf ezpaypal-extension-[ExtensionVersion].bz2
-   [zip]:
-   $ unzip ezpaypal-extension-[ExtensionVersion].zip
+2. Import the Database schema
+   mysql -u[ezpublish user] -p [ezpublish database] < extension/ezsaferpay/sql/mysql/schema.sql
 
 3. You must now enable the extension in eZ publish. To do this edit site.ini.append(.php) in the
    folder root_of_ezpublish/settings/override. If this file does not exist; create it. Locate (or add)
    the block [ExtensionSettings] and add the line:
    ActiveExtensions[]=ezsaferpay
+
+4. Configure your settings in the saferpay.ini file located in the 'settings' directory of the extension
+
+
+Credits
+=======
+
+This extension is based on the eZ Paypal Payment Gateway extension.
