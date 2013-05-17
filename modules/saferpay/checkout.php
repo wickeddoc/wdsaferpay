@@ -9,44 +9,29 @@
         $logger->writeTimedString($token, 'got token');
 
         $eZSaferPay = eZSaferPay::fetchByToken($token);
-        if ($eZSaferPay)
+        if ($eZSaferPay && $http->hasVariable( 'op' ))
         {
-            $status = $eZSaferPay->getTokenStatus($token);
             $logger->writeTimedString($status, 'token status is');
+            $status = $http->getVariable( 'op' );
             if ($status)
             {
                 switch ($status)
                 {
-                    case "success":
-                    case "failed":
+                    case "ok":
+                        sleep(3);
+                        eZBasket::cleanupCurrentBasket(false);
+                        $url = "/shop/orderview/" . $eZSaferPay->attribute('order_id');
+                    break;
+                    case "nok":
                         if (!$eZSaferPay->isProcessed())
                         {
                             $logger->writeTimedString('processing payment');
                             $checker = new eZSaferPayChecker('saferpay.ini');
-                            $checker->createDataFromGET();
                             $checker->setupOrderAndPaymentObject($eZSaferPay->attribute('order_id'));
-                            $data = $checker->getSaferPayData();
-                            $eZSaferPay->processPayment($data);
-                            $verified = $checker->verifyPayment($data);
-                            if ($verified && $status == 'success')
-                            {
-                                $orderID = $eZSaferPay->attribute('order_id');
-                                $logger->writeTimedString($orderID, 'payment approved for order');
-                                $eZSaferPay->setStatus('success');
-                                $checker->order->modifyStatus($checker->ini->variable( 'OrderSettings', 'SuccessID' ));
-                                if($checker->completePayment($eZSaferPay->attribute('auth_id')))
-                                    $eZSaferPay->setSettled();
-                            }
-                            else
-                            {
-                                $orderID = $eZSaferPay->attribute('order_id');
-                                if ($status == 'success')
-                                    $logger->writeTimedString($orderID, 'payment failed for order');
-                                else
-                                    $logger->writeTimedString($orderID, 'payment verification failed for order');
-                                $eZSaferPay->setStatus('failed');
-                                $checker->order->modifyStatus($checker->ini->variable( 'OrderSettings', 'FailedID' ));
-                            }
+                            $orderID = $eZSaferPay->attribute('order_id');
+                            $logger->writeTimedString($orderID, 'payment failed for order');
+                            $eZSaferPay->setStatus('failed');
+                            $checker->order->modifyStatus($checker->ini->variable( 'OrderSettings', 'FailedID' ));
                             $checker->approvePayment();
                             $checker->order->activate();
                         }
@@ -81,3 +66,5 @@
     $logger->writeTimedString($url, 'redirecting to');
     eZHTTPTool::redirect($url);
     eZExecution::cleanExit();
+
+

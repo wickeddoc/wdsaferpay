@@ -28,19 +28,15 @@ class eZSaferPay extends eZPersistentObject
                                                              'foreign_class' => 'eZUser',
                                                              'foreign_attribute' => 'contentobject_id',
                                                              'multiplicity' => '1..*' ),
-                                         "token_success" => array( 'name' => "TokenSuccess",
+                                        "session_id" => array( 'name' => "SessionId",
+                                            'datatype' => 'string',
+                                            'default' => '',
+                                            'required' => false ),
+                                         "token" => array( 'name' => "Token",
                                                                  'datatype' => 'string',
                                                                  'default' => '',
                                                                  'required' => false ),
-                                         "token_failed" => array( 'name' => "TokenFailed",
-                                                                 'datatype' => 'string',
-                                                                 'default' => '',
-                                                                 'required' => false ),
-                                         "token_back" => array( 'name' => "TokenBack",
-                                                                 'datatype' => 'string',
-                                                                 'default' => '',
-                                                                 'required' => false ),
-                                         "token_notify" => array( 'name' => "TokenNotify",
+                                         "cardrefid" => array( 'name' => "CardRefId",
                                                                  'datatype' => 'string',
                                                                  'default' => '',
                                                                  'required' => false ),
@@ -72,6 +68,43 @@ class eZSaferPay extends eZPersistentObject
                                                                  'datatype' => 'string',
                                                                  'default' => '',
                                                                  'required' => false ),
+
+                                        "providerid" => array( 'name' => "ProviderID",
+                                            'datatype' => 'string',
+                                            'default' => '',
+                                            'required' => false ),
+            "providername" => array( 'name' => "ProviderName",
+                'datatype' => 'string',
+                'default' => '',
+                'required' => false ),
+            "scddescription" => array( 'name' => "SCDDescription",
+                'datatype' => 'string',
+                'default' => '',
+                'required' => false ),
+            "cardtype" => array( 'name' => "CardType",
+                'datatype' => 'string',
+                'default' => '',
+                'required' => false ),
+            "cardmask" => array( 'name' => "CardMask",
+                'datatype' => 'string',
+                'default' => '',
+                'required' => false ),
+            "cardbrand" => array( 'name' => "CardBrand",
+                'datatype' => 'string',
+                'default' => '',
+                'required' => false ),
+            "expirymonth" => array( 'name' => "ExpiryMonth",
+                'datatype' => 'string',
+                'default' => '',
+                'required' => false ),
+            "expiryyear" => array( 'name' => "ExpiryYear",
+                'datatype' => 'string',
+                'default' => '',
+                'required' => false ),
+            "hostname" => array( 'name' => "HostName",
+                'datatype' => 'string',
+                'default' => '',
+                'required' => false ),
                                          "initiated_at" => array( 'name' => "Initiated",
                                                              'datatype' => 'integer',
                                                              'default' => time(),
@@ -93,47 +126,53 @@ class eZSaferPay extends eZPersistentObject
 
     public function initTokens()
     {
-        $this->setAttribute('token_success', $this->createToken());
-        $this->setAttribute('token_failed', $this->createToken());
-        $this->setAttribute('token_back', $this->createToken());
-        $this->setAttribute('token_notify', $this->createToken());
+        $this->setAttribute('token', $this->createToken());
+        $this->setAttribute('cardrefid', $this->createCardId());
         $this->store();
     }
 
     private function createToken()
     {
         $token = null;
-        while(!$this->isUnique($token))
+        while(!$this->isUnique($token, 'token'))
+        {
+            $token = hash("sha256", time() + rand(10000,999999));
+        }
+        return $token;
+    }
+
+    private function createCardId()
+    {
+        $token = null;
+        while(!$this->isUnique($token, 'cardrefid'))
         {
             $token = sha1(time() + rand(10000,999999));
         }
         return $token;
     }
 
-    private function isUnique($token)
+    private function isUnique($token, $field)
     {
-        if (!isset($token))
+        if (!isset($token) || is_null($token))
             return false;
-        $entry = eZSaferPay::fetchByToken($token);
-        $log = sprintf("testing for token: %s - got back: %s\n", $token, print_r($entry, true));
-        file_put_contents('/tmp/saferpay.log', $log, FILE_APPEND);
+        if ($field == 'token')
+            $entry = eZSaferPay::fetchByToken($token);
+        else
+            $entry = eZSaferPay::fetchByCard($token);
         if ($entry)
             return false;
         else
             return true;
     }
 
-    public function getToken($name)
+    public function getToken()
     {
-        $token_name = sprintf("token_%s", $name);
-        if ($this->hasAttribute($token_name))
-                return $this->attribute($token_name);
-        return false;
+        return $this->attribute("token");
     }
 
     static function fetchByToken($token = '')
     {
-        $customConds = sprintf(" WHERE token_success = '%s' OR token_notify = '%s' OR token_failed = '%s' OR token_back = '%s'", $token, $token, $token, $token);
+        $customConds = sprintf(" WHERE token = '%s'", $token);
         $rows = eZPersistentObject::fetchObjectList( eZSaferPay::definition(),
                               null,
                               null,
@@ -150,23 +189,69 @@ class eZSaferPay extends eZPersistentObject
             return false;
     }
 
+    static function fetchByCard($token = '')
+    {
+        $customConds = sprintf(" WHERE cardrefid = '%s'", $token);
+        $rows = eZPersistentObject::fetchObjectList( eZSaferPay::definition(),
+            null,
+            null,
+            null,
+            1,
+            true,
+            false,
+            null,
+            null,
+            $customConds );
+        if (count($rows) > 0)
+            return $rows[0];
+        else
+            return false;
+    }
+
+    static function fetchAnyByOrder($order_id = '')
+    {
+        $customConds = sprintf(" WHERE order_id = %d", $order_id);
+        $rows = eZPersistentObject::fetchObjectList( eZSaferPay::definition(),
+            null,
+            null,
+            null,
+            1,
+            true,
+            false,
+            null,
+            null,
+            $customConds );
+        if (count($rows) > 0)
+            return $rows[0];
+        else
+            return false;
+    }
+
+
+    static function fetchByOrder($order_id = '')
+    {
+        $customConds = sprintf(" WHERE order_id = %d AND status='success'", $order_id);
+        $rows = eZPersistentObject::fetchObjectList( eZSaferPay::definition(),
+            null,
+            null,
+            null,
+            1,
+            true,
+            false,
+            null,
+            null,
+            $customConds );
+        if (count($rows) > 0)
+            return $rows[0];
+        else
+            return false;
+    }
+
     public function isProcessed()
     {
         $processed_at = (int) $this->attribute('processed_at');
         if ($processed_at > 0)
             return true;
-        return false;
-    }
-
-    public function getTokenStatus($token)
-    {
-        $keys = array('success', 'failed', 'back', 'notify');
-        foreach ($keys as $key)
-        {
-            $token_name = sprintf("token_%s", $key);
-            if ($this->attribute($token_name) == $token)
-                return $key;
-        }
         return false;
     }
 
@@ -179,14 +264,14 @@ class eZSaferPay extends eZPersistentObject
         return false;
     }
 
-    private function dataToArray($data)
+    public function dataToArray($data)
     {
         $result = array();
 
         $data = substr($data, 4);
         $data = substr($data, 0, strlen($data) -2);
         $data = trim($data);
-        $data = explode(" ", $data);
+        $data = explode("\" ", $data);
         foreach ($data as $item)
         {
             list($key, $value) = explode("=", $item);
@@ -203,13 +288,21 @@ class eZSaferPay extends eZPersistentObject
         {
             $signature = $data['signature'];
             $data = $this->dataToArray($data['data']);
-            file_put_contents('/tmp/saferpay.log', print_r($data, true), FILE_APPEND);
             $this->setAttribute('signature', $signature);
             $this->setAttribute('auth_id', $data['id']);
             $this->setAttribute('ip', $data['ip']);
             $this->setAttribute('ip_country', $data['ipcountry']);
             $this->setAttribute('card_country', $data['cccountry']);
+            $this->setAttribute('providerid', $data['providerid']);
+            $this->setAttribute('providername', $data['providername']);
+            $this->setAttribute('scddescription', $data['scddescription']);
+            $this->setAttribute('cardbrand', $data['cardbrand']);
+            $this->setAttribute('cardtype', $data['cardtype']);
+            $this->setAttribute('cardmask', $data['cardmask']);
+            $this->setAttribute('expirymonth', $data['expirymonth']);
+            $this->setAttribute('expiryyear', $data['expiryyear']);
             $this->setAttribute('amount', $data['amount']);
+            $this->setAttribute('hostname', $_SERVER['HTTP_HOST']);
             $this->store();
         }
         else

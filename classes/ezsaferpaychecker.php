@@ -44,6 +44,29 @@ class eZSaferPayChecker extends eZPaymentCallbackChecker
 
 
     /*!
+        Asks paypal's server to validate callback.
+    */
+    function requestValidation()
+    {
+        $server     = $this->ini->variable( 'ServerSettings', 'ServerName');
+        //$serverPort = $this->ini->variable( 'ServerSettings', 'ServerPort');
+        $serverPort = 80;
+        $requestURI = $this->ini->variable( 'ServerSettings', 'RequestURI');
+        $request    = $this->buildRequestString();
+        $response   = $this->sendPOSTRequest( $server, $serverPort, $requestURI, $request);
+
+        $this->logger->writeTimedString( $response, 'requestValidation. response from server is' );
+
+        if( $response && strcasecmp( $response, 'VERIFIED' ) == 0 )
+        {
+            return true;
+        }
+
+        $this->logger->writeTimedString( 'invalid response' );
+        return false;
+    }
+
+    /*!
         Convinces of completion of the payment.
     */
     function checkPaymentStatus()
@@ -57,6 +80,21 @@ class eZSaferPayChecker extends eZPaymentCallbackChecker
         return false;
     }
 
+    // overrides
+    /*!
+        Creates resquest string which is used to 
+        confirm paypal's callback.
+    */
+    function buildRequestString()
+    {
+        $request = "cmd=_notify-validate";
+        foreach( $this->callbackData as $key => $value )
+        {
+            $request .= "&$key=".urlencode( $value );
+        }
+        return $request;
+    }
+    
     function handleResponse( $socket )
     {
         if( $socket )
@@ -65,7 +103,7 @@ class eZSaferPayChecker extends eZPaymentCallbackChecker
             {
                 $response = fgets ( $socket, 1024 );
             }
-
+      
             fclose( $socket );
             return $response;
         }
@@ -74,7 +112,7 @@ class eZSaferPayChecker extends eZPaymentCallbackChecker
         return null;
     }
 
-    function getSaferPayData()
+    public function getSaferPayData()
     {
         return array(
             'data' => $this->getFieldValue('DATA'),
@@ -86,7 +124,7 @@ class eZSaferPayChecker extends eZPaymentCallbackChecker
     /*!
         we override this to add the urldecode
     */
-    function createDataFromGET()
+    public function createDataFromGET()
     {
         $this->logger->writeTimedString( 'createDataFromGET' );
         $this->callbackData = array();
@@ -180,6 +218,52 @@ class eZSaferPayChecker extends eZPaymentCallbackChecker
             return true;
         return false;
     }
+
+    public function executePayment($action, $amount, $cardrefid, $orderId, $spAccount)
+    {
+
+        $saferpay_params = array(
+            'CARDREFID' => $cardrefid,
+            'ORDERID' => $orderId,
+            'AMOUNT' => (int) $amount,
+            'ACTION' => $action,
+            'CURRENCY' => $this->ini->variable( 'MerchantSettings', 'Currency' ),
+            'ACCOUNTID' => $this->ini->variable( 'MerchantSettings', 'AccountID' ),
+            'spPassword' => $this->ini->variable( 'MerchantSettings', 'Password' )
+        );
+        $request_params = array();
+        foreach ($saferpay_params as $key => $value)
+        {
+            $request_params[] = sprintf("%s=%s", strtoupper($key), $value);
+        }
+        $requestServer   = $this->ini->variable( 'ServerSettings', 'ServerName' );
+        $executeURI= $this->ini->variable( 'ServerSettings', 'ExecuteURI' );
+        $request_params = join("&", $request_params);
+        $request_url =  $requestServer . $executeURI;
+        $final_url = sprintf("%s?%s", $request_url, $request_params);
+
+        $this->logger->writeTimedString( $final_url, 'executePayment. URL is' );
+
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $final_url);
+        curl_setopt($ch, CURLOPT_PORT, 443);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_POST, false);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HEADER, false);
+        $completeResult = curl_exec($ch);
+        $this->logger->writeTimedString( $completeResult, 'executePayment. response was' );
+        if (strtolower(substr($completeResult, 0, 2)) == 'ok')
+        {
+            $completeResult = substr($completeResult, 3);
+            $completeResult = eZSaferPay::dataToArray($completeResult);
+            $this->logger->writeTimedString( print_r($completeResult, true), 'executePayment. expanded response was' );
+            return $completeResult;
+        }
+        return false;
+
+    }
+
 
 }
 

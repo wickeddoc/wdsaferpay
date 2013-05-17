@@ -14,7 +14,7 @@ class eZSaferPayGateway extends eZRedirectGateway
     }
 
     /*!
-        Creates new eZSaferPayGateway object.
+        Creates new eZPaypalGateway object.
     */
     function createPaymentObject( $processID, $orderID )
     {
@@ -23,11 +23,10 @@ class eZSaferPayGateway extends eZRedirectGateway
     }
 
     /*!
-        Create redirect URL to SaferPay service
+        Creates redirectional url to paypal server.
     */
     function createRedirectionUrl( $process )
     {
-
 
         $this->logger->writeTimedString("createRedirectionUrl");
 
@@ -36,32 +35,33 @@ class eZSaferPayGateway extends eZRedirectGateway
         $processParams  = $process->attribute( 'parameter_list' );
         $orderID        = $processParams['order_id'];
 
-        $localHost      = eZSys::serverURL();
-        $localURI       = eZSys::serverVariable( 'REQUEST_URI' );
+        $atm = new AtelierTicketManager();
+        $sessionId = $atm->getSessionFromOrder($orderID);
 
         $order          = eZOrder::fetch( $orderID );
-
         $amount         = urlencode( $order->attribute( 'total_inc_vat' ) * 100 );
         $currency       = urlencode( $order->currencyCode() );
+
+        $ezSaferPay     = new eZSaferPay(array('order_id' => $orderID, 'user_id' => eZUser::currentUserID(), 'amount' => $amount, 'session_id' => $sessionId));
+        $ezSaferPay->initTokens();
 
         $customer_email = urlencode( $order->accountEmail() );
 
         $accountID      = urlencode( $saferPayINI->variable( 'MerchantSettings', 'AccountID' ) );
 
-        $description    = urlencode( $saferPayINI->variable( 'MerchantSettings', 'Description' ) );
+        $description    = urlencode( 'den Atelier Shop' );
 
         $requestServer   = $saferPayINI->variable( 'ServerSettings', 'ServerName' );
         $createPaymentURI= $saferPayINI->variable( 'ServerSettings', 'CreatePaymentURI' );
 
-        $ezSaferPay     = new eZSaferPay(array('order_id' => $orderID, 'user_id' => eZUser::currentUserID(), 'amount' => $amount));
-        $ezSaferPay->initTokens();
+        $url = eZSys::serverURL();
 
-        $baseURL         = sprintf("%s/%s", $localHost, 'saferpay');
+        $baseURL         = sprintf("%s/saferpay", trim($url, '/'));
 
-        $notifyURL      = urlencode(sprintf("%s/notify?token=%s", $baseURL, $ezSaferPay->getToken('notify')));
-        $backURL        = urlencode(sprintf("%s/checkout?token=%s", $baseURL, $ezSaferPay->getToken('back')));
-        $successURL     = urlencode(sprintf("%s/checkout?token=%s", $baseURL, $ezSaferPay->getToken('success')));
-        $failURL        = urlencode(sprintf("%s/checkout?token=%s", $baseURL, $ezSaferPay->getToken('failed')));
+        $notifyURL      = urlencode(sprintf("%s/notify?token=%s", $baseURL, $ezSaferPay->getToken()));
+        $backURL        = urlencode(sprintf("%s/checkout?token=%s&op=back", $baseURL, $ezSaferPay->getToken()));
+        $successURL     = urlencode(sprintf("%s/checkout?token=%s&op=ok", $baseURL, $ezSaferPay->getToken()));
+        $failURL        = urlencode(sprintf("%s/checkout?token=%s&op=nok", $baseURL, $ezSaferPay->getToken()));
 
         $saferpay_params = array(
                 'ACCOUNTID' => $accountID,
@@ -69,16 +69,19 @@ class eZSaferPayGateway extends eZRedirectGateway
                 'AMOUNT' => $amount,
                 'CURRENCY' => $currency,
                 'ALLOWCOLLECT' => 'no',
-                'USERNOTIFY' => $customer_email,
+                'AUTOCLOSE' => 0,
+                'NOTIFYADDRESS' => 'saferpay@atelier.lu',
                 'DESCRIPTION' => $description,
                 'ORDERID' => $orderID,
                 'DELIVERY' => 'no',
                 'CCCVC' => 'yes',
-                'CCNAME' => 'yes',
+                'CCNAME' => 'no',
                 'SUCCESSLINK' => $successURL,
                 'FAILLINK' => $failURL,
                 'NOTIFYURL' => $notifyURL,
-                'BACKLINK' => $backURL
+                'BACKLINK' => $backURL,
+                'VTCONFIG' => 'denatelier',
+                'CARDREFID' => $ezSaferPay->attribute("cardrefid")
         );
 
         $request_params = array();
@@ -92,6 +95,7 @@ class eZSaferPayGateway extends eZRedirectGateway
 
         $final_url = sprintf("%s?%s", $request_url, $request_params);
 
+        //__DEBUG__
         $this->logger->writeTimedString("REQUEST URL = " . $request_url);
         $this->logger->writeTimedString("ACCOUNTID   = " . $accountID);
         $this->logger->writeTimedString("AMOUNT      = " . $amount);
@@ -104,6 +108,7 @@ class eZSaferPayGateway extends eZRedirectGateway
         $this->logger->writeTimedString("NOTIFYURL   = " . $notifyURL);
         $this->logger->writeTimedString("BACKLINK    = " . $backURL);
         $this->logger->writeTimedString("FINAL URL   = " . $final_url);
+        //___end____
 
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $final_url);
